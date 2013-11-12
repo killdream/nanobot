@@ -5,12 +5,22 @@ var boo    = require('boo')
 var spice  = require('spice')
 var profile = require('./nanoprofile')
 
-
 function ensure_not_active(bot, cx) {
   if (!bot.current_ww.active)
     return cx.channel.send_reply(cx.sender, "No WordWar active.")
   else
     return true
+}
+
+function string_to_time(hhmm) {  
+  var start = moment(hhmm, 'H:m')
+  if(!start.isValid())
+    return false
+    
+  if(start.isBefore(new Date()))
+    start.add('days', 1)
+    
+  return start
 }
 
 var WordWar = boo.Base.derive({
@@ -21,12 +31,13 @@ var WordWar = boo.Base.derive({
   }
 
 , activate:
-  function _activate(sender, minutes) {
+  function _activate(sender, minutes, start_at) {
     this.participants = [sender]
     this.starter      = sender
     this.open         = true
     this.active       = true
     this.time         = minutes
+    this.start_at     = start_at
   }
 
 , stop:
@@ -52,8 +63,12 @@ var WordWar = boo.Base.derive({
 
 , notify:
   function _notify() {
-    return spice('{:sender} is asking for a {:minutes} minutes WordWar! '
-                +'Type "!join" to participate. Type "!start" to begin.'
+    return spice('{:sender} is asking for a {:minutes} minutes WordWar'
+				+ (this.start_at ? ' to start at ' + this.start_at.format('HH:mm') : '')
+				+ '! '
+                +'Type "!join" to participate. Type "!start" to begin'
+				+ (this.start_at ? ' now' : '')
+				+'.'
                 , { sender:  this.starter
                   , minutes: this.time })
   }
@@ -78,8 +93,9 @@ var WordWar = boo.Base.derive({
 
 , notify_status:
   function _notify_status() {
-    return spice('WordWar will end on {:end} ({:minutes} minutes left). {:participants} nanowriters are in.'
+    return spice('WordWar started on {:start} and will end on {:end} ({:minutes} minutes left). {:participants} nanowriters are in.'
                 , { participants: this.participants.length
+				  , start:        this.start_time.format('HH:mm')
                   , end:          this.end_time.format('HH:mm')
                   , minutes:      moment(this.end_time.toDate())
                                     .subtract(new Date)
@@ -107,19 +123,33 @@ NanoBot.prototype.init = function() {
   this.register_command("join", this.join_ww)
   this.register_command("start", this.start_ww)
   this.register_command("part", this.part_ww)
+	this.register_command("quit", this.part_ww)
+	this.register_command("leave", this.part_ww)
   this.register_command("status", this.status_ww)
 	this.on('command_not_found', this.unrecognized)
 };
 
 NanoBot.prototype.ww = function(cx, text) {
-  var minutes = Number(text)
+  var args = text.split(' ')
+  var minutes = Number(args[0])
+  var start_at = false;
   if (this.current_ww.active)
     return cx.channel.send_reply(cx.sender, "There's a WordWar going on already!")
   if (isNaN(minutes) || minutes < 0)
-    return cx.channel.send_reply(cx.sender, 'Use "!ww [minutes]" (e.g.: "!ww 30"). The default are 20 minutes.')
+    return cx.channel.send_reply(cx.sender, 'Use "!ww [minutes] [time]" (e.g.: "!ww 30 12:34"). The default are 20 minutes with manual start.')
 
-  this.current_ww.activate(cx.sender, minutes || 20)
-  cx.channel.send(this.current_ww.notify())
+  if(args.length >= 2) {
+    start_at = string_to_time(args[1])
+    if (start_at === false)
+      return cx.channel.send_reply(cx.sender, 'Use "!ww [minutes] [time]" (e.g.: "!ww 30 12:34"). The default are 20 minutes with manual start.')
+    else
+      this.current_ww.timer = setTimeout(function() {
+        this.start_ww(cx, '')
+      }.bind(this), start_at.diff(new Date()))
+  }
+
+  this.current_ww.activate(cx.sender, minutes || 20, start_at)
+  cx.channel.send(this.current_ww.notify(start_at))
 };
 
 NanoBot.prototype.start_ww = function(cx, text) {
@@ -163,10 +193,13 @@ NanoBot.prototype.part_ww = function(cx, text) {
 
 NanoBot.prototype.status_ww = function(cx, text) {
   if (!ensure_not_active(this, cx))  return
-  if (this.current_ww.open)
-    cx.channel.send_reply(cx.sender, 'The word war hasn\'t started yet. You can type "!join" to participate.')
+  if (this.current_ww.open) {
+    cx.channel.send_reply(cx.sender, 'There\'s a ' + this.current_ww.time + ' minutes word war, but it hasn\'t started yet. ' 
+    + (this.current_ww.start_at ? 'It\'ll start at ' + this.current_ww.start_at.format('HH:mm') + '. ' : '')
+    + (this.current_ww.is_participating(cx.sender) ? 'You\'re already in.' : 'You can type "!join" to participate.'))
+  }
   else
-    cx.channel.send_reply(cx.sender, this.current_ww.notify_status())
+    cx.channel.send_reply(cx.sender, this.current_ww.notify_status() + (this.current_ww.is_participating(cx.sender) ? ' You\'re already in.' : ' You can type "!join" to participate.'))
 }
 
 NanoBot.prototype.unrecognized = function(cx, text) {
