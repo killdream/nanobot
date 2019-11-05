@@ -70,26 +70,24 @@ var twitterMessages = {
   ]
 }
 
+function entries(object) {
+  return Object.keys(object).map(k => [k, object[k]]);
+}
+
 var finalWcInterval = 300000
+var NUM_WINNERS = 5;
+
 function select_winner(ww, cx) {
-    var winner = {
-      name: ''
-    , wc: -1
-    }
+    var results = entries(ww.wordcounts)
+                    .map(([writer, count]) => ({ writer, wc: count.current - count.start }))
+                    .sort((a, b) => b.wc - a.wc)
+                    .map(({writer, wc}, i) => `${i+1}º - ${writer} (${wc} palavras)`)
+                    .slice(0, NUM_WINNERS)
+                    .join('; ');
 
-    for(var writer in ww.wordcounts)
-    {
-      var thisWc = ww.wordcounts[writer].current - ww.wordcounts[writer].start
-      if (thisWc > winner.wc)
-        winner = {
-          name: writer
-        , wc: thisWc
-        }
-    }
-
-    cx.channel.send('Quem escreveu mais foi ' + winner.name + ' com ' + winner.wc + ' palavras, mas todos são vencedores!')
+    cx.channel.send('O ranking final é ' + results + '. Mas todos são vencedores!')
     ww.trailing = false
-  }
+}
 
 function choose(xs) {
   return xs[Math.floor(Math.random() * xs.length)] }
