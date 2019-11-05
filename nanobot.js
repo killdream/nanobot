@@ -70,10 +70,15 @@ var twitterMessages = {
   ]
 }
 
+function entries(object) {
+  return Object.keys(object).map(k => [k, object[k]]);
+}
+
 var finalWcInterval = 300000
 var NUM_WINNERS = 5;
+
 function select_winner(ww, cx) {
-    var results = Object.entries(ww.wordcounts)
+    var results = entries(ww.wordcounts)
                     .map(([writer, count]) => ({ writer, wc: count.current - count.start }))
                     .sort((a, b) => b.wc - a.wc)
                     .map(({writer, wc}, i) => `${i+1}º - ${writer} (${wc} palavras)`)
